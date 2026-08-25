@@ -1,0 +1,23 @@
+{
+  "name": "thaddeus-compiler",
+  "version": "1.0.0",
+  "description": "",
+  "homepage": "https://github.com/krysyuk-lilii/thaddeus-compiler-js#readme",
+  "bugs": {
+    "url": "https://github.com/krysyuk-lilii/thaddeus-compiler-js/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/krysyuk-lilii/thaddeus-compiler-js.git"
+  },
+  "license": "ISC",
+  "author": "K. Russell Smith",
+  "type": "module",
+  "main": "compiler.js",
+  "scripts": {
+    "test": "node compiler.js"
+  },
+  "dependencies": {
+    "llc": "^0.1.6"
+  }
+}
