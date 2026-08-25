@@ -510,7 +510,7 @@ class Parser
     advance()
     {
           this.prev = this.curr;
-          this.curr = scan();
+          this.curr = this.lexer.scan();
           // Lexical errors will be handled here.
           return this.curr;
         }
