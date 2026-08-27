@@ -5,21 +5,15 @@ import fs from 'fs/promises';
 
 const execAsync = promisify(exec);
 const sourceCode = `
+fun add(a: i32, b: i32) : i32
+{
+  return a + b
+}
 fun init() : i32
 {
   return 42
 }
 `;
-// Your LLVM IR defined directly as a JavaScript string
-const llvmIRString = `
-target datalayout = "e-m:e-p:32:32-p10:32:32-p20:32:32-i64:64-n32:64-S128-ni:1:10:20"
-target triple = "wasm32-unknown-unknown"
-
-define i32 @add(i32 %a, i32 %b) {
-      %result = add i32 %a, %b
-                  ret i32 %result
-                  }
-                  `;
 const Enum = (...args) =>
 {
   const result = {};
@@ -36,6 +30,7 @@ const Enum = (...args) =>
 };
 const TokenType = Enum(
   'ID', 'FUN', 'RET', 'L_PAREN', 'R_PAREN',
+  'PLUS', 'SUB', 'MUL', 'DIV',
   'L_BRACE', 'R_BRACE', 'L_BRACK', 'R_BRACK', 'COLON',
   'STRING', 'INTERP', 'ERR', 'ENDL', 'EOF'
 );
@@ -346,6 +341,14 @@ class Lexer
         return Token(TokenType.ENDL, this);
       case ':':
         return Token(TokenType.COLON, this);
+      case: '+':
+        return Token(TokenType.PLUS, this);
+      case: '-':
+        return Token(TokenType.SUB, this);
+      case: '*':
+        return Token(TokenType.MUL, this);
+      case: '/':
+        return Token(TokenType.DIV, this);
       case '{':
         if (this.interps.length > 0)
         {
@@ -508,11 +511,11 @@ class Parser
       globals: {},
       funcs:   {},
     };
-    this.curr    = null;
-    this.prev    = null;
-    this.panic   = false;
-    this.lexer   = new Lexer(source);
-    this.types   = new TypeRegistry();
+    this.curr     = null;
+    this.prev     = null;
+    this.panic    = false;
+    this.lexer    = new Lexer(source);
+    this.registry = new TypeRegistry();
   }
   advance()
   {
@@ -562,7 +565,6 @@ class Parser
   {
     if (this.taste(TokenType.FUN))
     {
-      console.log("fun");
       this.skipBreaks();
       const name = this.eat(TokenType.ID, "expected identifier.");
       const args = {};
@@ -623,20 +625,94 @@ class Parser
     return this.topLevel();
   }
 }
+class Emitter
+{
+  constructor(sourceCode)
+  {
+    this.parser = new Parser(sourceCode);
+    this.reg_counter = 0;
+  }
+  nextRegister()
+  {
+    return `%${this.reg_counter++}`;
+  }
+  compile()
+  {
+    const AST = this.parser.parse();
+    return this.emit(AST);
+  }
+  emit(astNode)
+  {
+    const header = [
+      'target datalayout = "e-m:e-p:32:32-p10:32:32-p20:32:32-i64:64-n32:64-S128-ni:1:10:20"',
+      'target triple = "wasm32-unknown-unknown"',
+      ''
+    ].join('\n');
+
+    const body = this.emitNode(astNode);
+    return `${header}\n${body}`;
+  }
+
+  emitNode(node)
+  {
+    switch (node.type)
+    {
+      case NodeType.FUNC:
+        return this.emitFunc(node);
+      case NodeType.BLOCK:
+        return this.emitBlock(node);
+      case NodeType.RETURN:
+        return this.emitReturn(node);
+      case NodeType.INT:
+        return { val: String(node.value), type: 'i32' };
+      default:
+        throw new Error(`Unhandled AST node type: ${NodeType[node.type]}`);
+    }
+  }
+
+  emitFunc(node)
+  {
+    this.registerCounter = 0; // Reset registers per function scope
+
+    // Resolve primitive type or default to i32
+    const retTypeEntry = this.parser.registry.types.get(node.ret_type);
+    const llvmRetType = retTypeEntry ? retTypeEntry.llvmString : 'i32';
+
+    // Convert token object/string identifier name
+    const funcName = typeof node.name === 'object' ? node.name.value : node.name;
+
+    const lines = [];
+    lines.push(`define ${llvmRetType} @${funcName}() {`);
+    lines.push(this.emitNode(node.body));
+    lines.push(`}`);
+
+    return lines.join('\n');
+  }
+
+  emitBlock(node)
+  {
+    const lines = [];
+    for (const stmt of node.statements) {
+      lines.push(this.emitNode(stmt));
+    }
+    return lines.map(line => `  ${line}`).join('\n');
+  }
+
+  emitReturn(node)
+  {
+    // Evaluate the return expression
+    const exprResult = this.emitNode(node.value);
+    return `ret ${exprResult.type} ${exprResult.val}`;
+  }
+}
 async function compileString() {
   try {
-    const parser = new Parser(sourceCode);
-    console.dir(parser.parse(), { depth: null, colors: true });
-    /*console.log('Step 1: Pipelining LLVM IR string directly into llc via stdin...');
-
-    // Pass "-" as the input filename to instruct llc to read from stdin
+    const emitter = new Emitter(sourceCode);
+    const llvmIR = emitter.compile();
+    console.log(llvmIR);
     const llc = spawn('llc', ['-mtriple=wasm32-unknown-unknown', '-filetype=obj', '-', '-o', 'add.o']);
-
-    // Write your string to llc's standard input stream and close it
-    llc.stdin.write(llvmIRString);
+    llc.stdin.write(llvmIR);
     llc.stdin.end();
-
-    // Wait for llc compilation to finish
     await new Promise((resolve, reject) => {
       llc.on('close', (code) => {
         if (code === 0) resolve();
@@ -644,7 +720,6 @@ async function compileString() {
       });
       llc.on('error', reject);
     });
-
     console.log('Step 2: Linking Object file to standalone Wasm (.wasm)...');
     await execAsync('wasm-ld --no-entry --export-all add.o -o add.wasm');
 
@@ -653,9 +728,18 @@ async function compileString() {
     // Step 3: Verify and execute
     const wasmBuffer = await fs.readFile('./add.wasm');
     const wasmModule = await WebAssembly.instantiate(wasmBuffer);
-    const { add } = wasmModule.instance.exports;
+    const { init } = wasmModule.instance.exports;
 
-    console.log(`Result of add(40, 2): ${add(40, 2)}`); // Expected: 42
+    console.log(`Running: ${init()}`);
+    //console.dir(parser.parse(), { depth: null, colors: true });
+    /*console.log('Step 1: Pipelining LLVM IR string directly into llc via stdin...');
+
+    // Pass "-" as the input filename to instruct llc to read from stdin
+
+    // Write your string to llc's standard input stream and close it
+
+    // Wait for llc compilation to finish
+
 */
   } catch (error) {
     console.error('Compilation failed:', error.message);
