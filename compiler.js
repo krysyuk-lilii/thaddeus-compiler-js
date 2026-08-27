@@ -50,8 +50,8 @@ const Token = (type, lexer, value = null) => ({
   }
 });
 const keywords = Object.freeze({
-  'fun':    Token.FUN,
-  'return': Token.RET,
+  'fun':    TokenType.FUN,
+  'return': TokenType.RET,
 });
 class Lexer
 {
@@ -345,13 +345,13 @@ class Lexer
         this.newLine();
         return Token(TokenType.ENDL, this);
       case ':':
-        return Token(TokenType.FUN, this);
+        return Token(TokenType.COLON, this);
       case '{':
         if (this.interps.length > 0)
         {
           ++this.interps[this.interps.length - 1];
         }
-        return Token(TokenType.LBRACE, this);
+        return Token(TokenType.L_BRACE, this);
       case '}':
         if (this.interps.length > 0)
         {
@@ -362,15 +362,15 @@ class Lexer
             return this.singleString();
           }
         }
-        return Token(TokenType.RBRACE, this);
+        return Token(TokenType.R_BRACE, this);
       case '(':
-        return Token(TokenType.LPAREN, this);
+        return Token(TokenType.L_PAREN, this);
       case ')':
-        return Token(TokenType.RPAREN, this);
+        return Token(TokenType.R_PAREN, this);
       case '[':
-        return Token(TokenType.LBRACK, this);
+        return Token(TokenType.L_BRACK, this);
       case ']':
-        return Token(TokenType.RBRACK, this);
+        return Token(TokenType.R_BRACK, this);
       default:
       {
         if (this.isDigit(char))
@@ -442,8 +442,8 @@ const NodeType = Enum(
   'REAL',       'INT',           'GET',
   'TRUE',       'FALSE',         'AND',
   'OR',         'ELSE',          'OPTIONAL',
-  'IF',         'SET',           'LBRACE',
-  'RBRACE',     'COMP',          'NOT',
+  'IF',         'SET',           'COMP',
+  'NOT',
   'NULL',       'FOR',           'PASS',
   'WHILE',      'BREAK',         'CONTINUE',
   'THIS',       'CALL',          'MATCH',
@@ -452,7 +452,7 @@ const NodeType = Enum(
   'SUBSCRIPT',  'SET_SUBSCRIPT', 'ASSIGN',
   'OBJ',        'EXPR',          'FUNC_CALL',
   'ARRAY',      'IMPORT',        'GET_PROP',
-  'SET_PROP',   'COAL',          'FIN');
+  'SET_PROP',   'COAL',          'END');
 const Node = (() =>
   {
     const base = (type, line = 0) => ({
@@ -489,11 +489,11 @@ const Node = (() =>
       }),
       // EVERY function will be lifted to a global level, and thus be given names by the parser (eg init.lambda.line.12.1)
       Func: (name, args, ret_type, body, line = 0) => ({
-        ...Base(NodeType.FUNC, line),
-        args, ret_type, body
+        ...base(NodeType.FUNC, line),
+        name, args, ret_type, body
       }),
       Block: (statements, line = 0) => ({
-        ...Base(NodeType.BLOCK, line),
+        ...base(NodeType.BLOCK, line),
         statements
       }),
     };
@@ -523,7 +523,7 @@ class Parser
   }
   error(token, message)
   {
-    log(`[${token.line}:${token.col}] ${message}`);
+    console.log(`[${token.line}:${token.col}] ${message}`);
     this.panic = true;
   }
   sniff(...types)
@@ -550,45 +550,84 @@ class Parser
     }
     return false;
   }
+  get atEnd()
+  {
+    return this.sniff(TokenType.EOF);
+  }
   skipBreaks()
   {
     while (this.taste(TokenType.ENDL));
   }
   topLevel()
   {
-    const lexer = new Lexer(this.source);
     if (this.taste(TokenType.FUN))
     {
-      this.skipLines();
+      console.log("fun");
+      this.skipBreaks();
       const name = this.eat(TokenType.ID, "expected identifier.");
-      this.skipLines();
+      const args = {};
+      this.skipBreaks();
       this.eat(TokenType.L_PAREN, "expected opening parenthensis.");
-      this.skipLines();
+      this.skipBreaks();
       // will parse args here...
-      this.skipLines();
+      this.skipBreaks();
       this.eat(TokenType.R_PAREN, "expected closing parenthensis.");
-      this.skipLines();
+      this.skipBreaks();
       this.eat(TokenType.COLON, "expected colon.");
-      this.skipLines();
-      const type = this.eat(TokenType.ID, "expected type").value;
-      this.skipLines();
+      this.skipBreaks();
+      const retType = this.eat(TokenType.ID, "expected type").value;
+      this.skipBreaks();
       const body = this.parseBlock();
+      return Node.Func(name, args, retType, body);
     }
   }
   parseBlock()
   {
+    this.eat(TokenType.L_BRACE, "expected opening brace");
+    const statements = [];
+    while (!this.taste(TokenType.R_BRACE))
+    {
+      this.skipBreaks();
+      if (this.atEnd)
+      {
+        this.error(this.curr, "unexpected end of file");
+        return null;
+      }
+      console.log("foo");
+      const stmt = this.parseStmt();
+      statements.push(stmt);
+      this.skipBreaks();
+    }
+    return Node.Block(statements);
   }
   parseStmt()
   {
+    if (this.taste(TokenType.RET))
+    {
+      return Node.Unary(NodeType.RETURN, this.parseExpr());
+    }
+    return this.parseExpr();
   }
   parseExpr()
   {
+    if (this.taste(TokenType.INT))
+    {
+      return Node.Constant(NodeType.INT, this.prev);
+    }
+    return null;
   }
-
+  parse()
+  {
+    this.advance();
+    this.skipBreaks();
+    return this.topLevel();
+  }
 }
 async function compileString() {
   try {
-    console.log('Step 1: Pipelining LLVM IR string directly into llc via stdin...');
+    const parser = new Parser(sourceCode);
+    console.dir(parser.parse(), { depth: null, colors: true });
+    /*console.log('Step 1: Pipelining LLVM IR string directly into llc via stdin...');
 
     // Pass "-" as the input filename to instruct llc to read from stdin
     const llc = spawn('llc', ['-mtriple=wasm32-unknown-unknown', '-filetype=obj', '-', '-o', 'add.o']);
@@ -617,7 +656,7 @@ async function compileString() {
     const { add } = wasmModule.instance.exports;
 
     console.log(`Result of add(40, 2): ${add(40, 2)}`); // Expected: 42
-
+*/
   } catch (error) {
     console.error('Compilation failed:', error.message);
   }
