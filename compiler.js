@@ -432,14 +432,14 @@ class TypeRegistry
       ...definition
     });
   }
-  getOrCreateFunctionType(paramTypesArray, returnTypeString)
+  func(arg_types, ret_type)
   {
-    const paramString = paramTypesArray.join(', ');
-    const signatureKey = `fun(${paramString}) : ${returnTypeString}`;
+    const args = arg_types.join(', ');
+    const signature = `fun(${args}) : ${ret_type}`;
 
-    if (this.types.has(signatureKey))
+    if (this.types.has(signature))
     {
-      return this.types.get(signatureKey);
+      return this.types.get(signature);
     }
 
     const functionDefinition = {
@@ -449,13 +449,13 @@ class TypeRegistry
       llvmString: "ptr", 
       size: 8,
 
-      params: paramTypesArray, // e.g. ["i32", "i32"]
-      returnType: returnTypeString, // e.g. "i32"
+      args: arg_types, // e.g. ["i32", "i32"]
+      ret_type, // e.g. "i32"
 
-      signature: signatureKey // "fun(i32, i32) : i32"
+      signature // "fun(i32, i32) : i32"
     };
 
-    this.types.set(signatureKey, functionDefinition);
+    this.types.set(signature, functionDefinition);
     return functionDefinition;
   }
   isValidType(name)
@@ -516,8 +516,8 @@ const Node = (() =>
         name: token.value,
       }),
       // EVERY function will be lifted to a global level, and thus be given names by the parser (eg init.lambda.line.12.1)
-      Func: (name, args, ret_type, body, line = 0) => ({
-        ...base(NodeType.FUNC, line, `fun(${args.map(arg => arg.type).join(' ')}) ${ret_type}`),
+      Func: (name, args, ret_type, type, body, line = 0) => ({
+        ...base(NodeType.FUNC, line, type),
         name, args, ret_type, body
       }),
       Block: (statements, line = 0) => ({
@@ -532,9 +532,9 @@ class Parser
   {
     this.source  = source;
     this.manifest = {
-      classes: {},
-      globals: {},
-      funcs:   {},
+      classes: new Set(),
+      globals: new Set(),
+      funcs:   new Set(),
     };
     this.curr     = null;
     this.prev     = null;
@@ -623,7 +623,8 @@ class Parser
       const retType = this.eat(TokenType.ID, "expected type").value;
       this.skipBreaks();
       const body = this.parseBlock();
-      return Node.Func(name, args, retType, body);
+      const type = this.registry.func(args.map(arg => arg.type), retType);
+      this.manifest.funcs.set(name.value, Node.Func(name, args, retType, type.signature, body));
     }
   }
   parseBlock()
@@ -638,7 +639,6 @@ class Parser
         this.error(this.curr, "unexpected end of file");
         return null;
       }
-      console.log("foo");
       const stmt = this.stmt();
       statements.push(stmt);
       this.skipBreaks();
