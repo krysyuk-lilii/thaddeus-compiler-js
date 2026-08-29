@@ -11,7 +11,7 @@ fun add(a: i32, b: i32) : i32
 }
 fun init() : i32
 {
-  return 42
+  return add(20, 30)
 }
 `;
 const Enum = (...args) =>
@@ -117,33 +117,33 @@ class Lexer
           }
           break;
         case '`':
-        {
-          let depth = 1;
-          for (;;)
           {
-            const char = this.advance();
-            if (this.fin())
+            let depth = 1;
+            for (;;)
             {
-              break;
-            }
-            if (char === '.')
-            {
-              if (this.match('`'))
+              const char = this.advance();
+              if (this.fin())
               {
-                --depth;
+                break;
+              }
+              if (char === '.')
+              {
+                if (this.match('`'))
+                {
+                  --depth;
+                }
+              }
+              else if (this.match('`'))
+              {
+                ++depth;
+              }
+              if (depth <= 0)
+              {
+                break;
               }
             }
-            else if (this.match('`'))
-            {
-              ++depth;
-            }
-            if (depth <= 0)
-            {
-              break;
-            }
+            break;
           }
-          break;
-        }
         default: return;
       }
     }
@@ -184,44 +184,44 @@ class Lexer
           break;
           // Escape sequences:
         case '\\':
-        {
-          switch (this.look())
           {
-            case 'n':
-              string += '\n';
-              break;
-            case 'r':
-              string += '\r';
-              break;
-            case 'f':
-              string += '\f';
-              break;
-            case 't':
-              string += '\t';
-              break;
-            case 'v':
-              string += '\v';
-              break;
-            case 'a':
-              string += '\a';
-              break;
-            case 'b':
-              string += '\b';
-              break;
-            case '"':
-              string += '"';
-              break;
-            case '\\':
-              string += '\\';
-              break;
-            case '\n':
-              break;
-            default:
-              return this.error(`Unrecognized escape: \\${this.look()}`);
+            switch (this.look())
+            {
+              case 'n':
+                string += '\n';
+                break;
+              case 'r':
+                string += '\r';
+                break;
+              case 'f':
+                string += '\f';
+                break;
+              case 't':
+                string += '\t';
+                break;
+              case 'v':
+                string += '\v';
+                break;
+              case 'a':
+                string += '\a';
+                break;
+              case 'b':
+                string += '\b';
+                break;
+              case '"':
+                string += '"';
+                break;
+              case '\\':
+                string += '\\';
+                break;
+              case '\n':
+                break;
+              default:
+                return this.error(`Unrecognized escape: \\${this.look()}`);
+            }
+            this.advance();
+            break;
           }
-          this.advance();
-          break;
-        }
         default:
         {
           if (curr == '\n')
@@ -255,59 +255,59 @@ class Lexer
           break;
           // Escape sequences:
         case '\\':
-        {
-          switch (this.look())
           {
-            case 'n':
-              string += '\n';
-              break;
-            case 'r':
-              string += '\r';
-              break;
-            case 'f':
-              string += '\f';
-              break;
-            case 't':
-              string += '\t';
-              break;
-            case 'v':
-              string += '\v';
-              break;
-            case 'a':
-              string += '\a';
-              break;
-            case 'b':
-              string += '\b';
-              break;
-            case '\'':
-              string += '\'';
-              break;
-            case '#':
-              string += '#';
-              break;
-            case '\\':
-              string += '\\';
-              break;
-            case '\n':
-              break;
-            default:
-              return this.error(`Unrecognized escape: \\${this.look()}`);
-          }
-          this.advance();
-          break;
-        }
-        // Interpolation:
-        case '#':
-        {
-          if (this.match('{'))
-          {
-            type = TokenType.INTERP;
-            this.interps.push(1);
-            done = true;
+            switch (this.look())
+            {
+              case 'n':
+                string += '\n';
+                break;
+              case 'r':
+                string += '\r';
+                break;
+              case 'f':
+                string += '\f';
+                break;
+              case 't':
+                string += '\t';
+                break;
+              case 'v':
+                string += '\v';
+                break;
+              case 'a':
+                string += '\a';
+                break;
+              case 'b':
+                string += '\b';
+                break;
+              case '\'':
+                string += '\'';
+                break;
+              case '#':
+                string += '#';
+                break;
+              case '\\':
+                string += '\\';
+                break;
+              case '\n':
+                break;
+              default:
+                return this.error(`Unrecognized escape: \\${this.look()}`);
+            }
+            this.advance();
             break;
           }
-          // Fall-through
-        }
+          // Interpolation:
+        case '#':
+          {
+            if (this.match('{'))
+            {
+              type = TokenType.INTERP;
+              this.interps.push(1);
+              done = true;
+              break;
+            }
+            // Fall-through
+          }
         default:
         {
           if (curr == '\n')
@@ -421,7 +421,7 @@ class TypeRegistry
     this.types.set("f32", { isPrimitive: true, llvmString: "float", size: 4 });
 
     // CPointer maps straight to opaque FFI handle byte pointer
-    this.types.set("CPointer", { isPrimitive: true, llvmString: "i8*", size: 8 });
+    this.types.set("CPointer", { isPrimitive: true, llvmString: "ptr", size: 8 });
   }
 
   registerClass(name, definition)
@@ -432,7 +432,32 @@ class TypeRegistry
       ...definition
     });
   }
+  getOrCreateFunctionType(paramTypesArray, returnTypeString)
+  {
+    const paramString = paramTypesArray.join(', ');
+    const signatureKey = `fun(${paramString}) : ${returnTypeString}`;
 
+    if (this.types.has(signatureKey))
+    {
+      return this.types.get(signatureKey);
+    }
+
+    const functionDefinition = {
+      isPrimitive: false,
+      isFunction: true,
+
+      llvmString: "ptr", 
+      size: 8,
+
+      params: paramTypesArray, // e.g. ["i32", "i32"]
+      returnType: returnTypeString, // e.g. "i32"
+
+      signature: signatureKey // "fun(i32, i32) : i32"
+    };
+
+    this.types.set(signatureKey, functionDefinition);
+    return functionDefinition;
+  }
   isValidType(name)
   {
     return this.types.has(name);
@@ -458,41 +483,41 @@ const NodeType = Enum(
   'SET_PROP',   'COAL',          'END');
 const Node = (() =>
   {
-    const base = (type, line = 0) => ({
+    const base = (type, line = 0, datatype = null) => ({
       type, line,
     });
     return {
-      Constant: (type, token) => ({
-        ...base(type, token.line),
+      Constant: (type, token, datatype) => ({
+        ...base(type, token.line, datatype),
         value: token.value,
       }),
       Nilary: base,
-      Unary: (type, value, line = 0) => ({
-        ...base(type, line),
+      Unary: (type, value, line = 0, datatype = null) => ({
+        ...base(type, line, datatype),
         value,
       }),
-      UnaryOp: (op, value, line = 0) => ({
-        ...base(NodeType.UNARY, line),
-        value, op,
+      UnaryOp: (op, value, line = 0, datatype) => ({
+        ...base(NodeType.UNARY, line, datatype),
+        value, op, datatype: value.
       }),
-      Binary: (type, left, right, line = 0) => ({
-        ...base(type, line),
+      Binary: (type, left, right, line = 0, datatype = null) => ({
+        ...base(type, line, datatype),
         left, right,
       }),
-      BinaryOp: (op, left, right, line = 0) => ({
-        ...base(NodeType.BINARY, line),
+      BinaryOp: (op, left, right, line = 0, datatype) => ({
+        ...base(NodeType.BINARY, line, datatype),
         left, right, op,
       }),
-      Trinary: (type, left, middle, right, line = 0) => ({
-        ...base(type, line),
+      Trinary: (type, left, middle, right, line = 0, dattype) => ({
+        ...base(type, line, datatype),
       }),
-      Get: (token) => ({
-        ...base(NodeType.GET, token.line),
+      Get: (token, datatype) => ({
+        ...base(NodeType.GET, token.line, datatype),
         name: token.value,
       }),
       // EVERY function will be lifted to a global level, and thus be given names by the parser (eg init.lambda.line.12.1)
       Func: (name, args, ret_type, body, line = 0) => ({
-        ...base(NodeType.FUNC, line),
+        ...base(NodeType.FUNC, line, `fun(${args.map(arg => arg.type).join(' ')}) ${ret_type}`),
         name, args, ret_type, body
       }),
       Block: (statements, line = 0) => ({
@@ -567,10 +592,28 @@ class Parser
     {
       this.skipBreaks();
       const name = this.eat(TokenType.ID, "expected identifier.");
-      const args = {};
+      const args = [];
       this.skipBreaks();
       this.eat(TokenType.L_PAREN, "expected opening parenthensis.");
       this.skipBreaks();
+      if (this.sniff(TokenType.ID))
+      {
+        do
+        {
+          this.skipBreaks();
+          const name = this.eat(TokenType.ID, "expected identifier").value;
+          this.skipBreaks();
+          this.eat(TokenType.COLON, "Expected colon");
+          this.skipBreaks();
+          const type = this.eat(TokenType.ID, "expected type").value;
+          /*if (args.hasOwn(name))
+          {
+            this.error(this.prev, `repeated argument ${name}`);
+          }*/
+          args.push({ name, type });
+          this.skipBreaks();
+        } while (this.taste(token.COMMA);
+      }
       // will parse args here...
       this.skipBreaks();
       this.eat(TokenType.R_PAREN, "expected closing parenthensis.");
@@ -596,21 +639,80 @@ class Parser
         return null;
       }
       console.log("foo");
-      const stmt = this.parseStmt();
+      const stmt = this.stmt();
       statements.push(stmt);
       this.skipBreaks();
     }
     return Node.Block(statements);
   }
-  parseStmt()
+  stmt()
   {
     if (this.taste(TokenType.RET))
     {
       return Node.Unary(NodeType.RETURN, this.parseExpr());
     }
-    return this.parseExpr();
+    return this.expr();
   }
-  parseExpr()
+  factor()
+  {
+    let result;
+    if (this.taste(TokenType.INT))
+    {
+      result = Node.Constant(NodeType.INT, this.prev);
+    }
+    else if (this.taste(TokenType.REAL))
+    {
+      result = Node.Constant(NodeType.REAL, this.prev);
+    }
+    else if (this.taste(TokenType.STRING))
+    {
+      result = Node.Constant(NodeType.STRING, this.prev);
+    }
+    else if (this.taste(TokenType.TRUE))
+    {
+      result = Node.Nilary(NodeType.TRUE, this.prev.line);
+    }
+    else if (this.taste(TokenType.FALSE))
+    {
+      result = Node.Nilary(NodeType.FALSE, this.prev.line);
+    }
+    else if (this.taste(TokenType.NULL))
+    {
+      result = Node.Nilary(NodeType.NULL, this.prev.line);
+    }
+    else if (this.taste(TokenType.ID))
+    {
+      result = Node.Get(this.prev);
+    }
+    else if (
+      this.taste(
+        TokenType.SUB,
+        TokenType.NOT,
+        TokenType.SQUIGGLY,
+        TokenType.PLUS))
+    {
+      const token = this.prev;
+      this.skipBreaks();
+      result = Node.UnaryOp(token.type, this.factor(), token.line);
+    }
+    else if (this.taste(TokenType.SQUIGGLY))
+    {
+      result = Node.Unary(this, this.factor());
+    }
+    else if (this.taste(TokenType.NOT))
+    {
+      result = Node.Unary(NodeType.NOT, this.factor());
+    }
+    else if (this.taste(TokenType.L_PAREN))
+    {
+
+      this.skipBreaks();
+      let expr = this.expression();
+      this.eat(TokenType.R_PAREN, 'Expected closing parenthensis.');
+        result = Node.Unary(NodeType.GROUP, expr, this.prev.line);
+    }
+  }
+  expr()
   {
     if (this.taste(TokenType.INT))
     {
