@@ -5,9 +5,7 @@ import fs from 'fs/promises';
 
 const execAsync = promisify(exec);
 
-// Test source: tail-recursive Fibonacci via 'become', including a
-// deliberately parenthesized ('grouped') tail-call target to confirm the
-// group-unwrapping logic.
+
 const sourceCode = `
 extern fun print(s: str) : void
 extern fun int_to_str(v: i32) : str
@@ -340,6 +338,11 @@ class Lexer
   }
 }
 
+function funcSig(arg_types, ret_type)
+{
+  const args = arg_types.join(', ');
+  return `fun(${args}) : ${ret_type}`;
+}
 class TypeRegistry
 {
   constructor()
@@ -354,8 +357,7 @@ class TypeRegistry
   }
   func(arg_types, ret_type)
   {
-    const args = arg_types.join(', ');
-    const signature = `fun(${args}) : ${ret_type}`;
+    const signature = funcSig(arg_types, ret_type);
     if (this.types.has(signature)) return this.types.get(signature);
     const functionDefinition = {
       isPrimitive: false, isFunction: true, llvmString: "ptr", size: 8,
@@ -364,11 +366,6 @@ class TypeRegistry
     this.types.set(signature, functionDefinition);
     return functionDefinition;
   }
-  // Fixed-size arrays share the string convention: a 4-byte length prefix
-  // immediately followed by the element data, all inside one flat memory
-  // region. LLVM layout: { i32, [length x elemType] }. Registering this as
-  // an anonymous struct type (rather than a named %type) means it can be
-  // used inline in alloca/getelementptr without a separate declaration.
   array(elementTypeName, length)
   {
     const key = `${elementTypeName}[${length}]`;
@@ -409,8 +406,8 @@ const Node = (() =>
     Binary: (type, left, right, line = 0, datatype = null) => ({ ...base(type, line, datatype), left, right }),
     BinaryOp: (op, left, right, line = 0, datatype) => ({ ...base(NodeType.BINARY, line, datatype), left, right, op }),
     Get: (token, datatype) => ({ ...base(NodeType.GET, token.line, datatype), name: token.value }),
-    Func: (name, args, ret_type, type, body, line = 0, isExtern = false) => ({
-      ...base(NodeType.FUNC, line, type), name, args, ret_type, body, isExtern
+    Func: (name, args, ret_type, sig, body, line = 0, isExtern = false) => ({
+      ...base(NodeType.FUNC, line, sig), name, args, ret_type, body, isExtern
     }),
     Block: (statements, line = 0) => ({ ...base(NodeType.BLOCK, line), statements }),
     Declare: (name, declaredType, value, mutable, line = 0) => ({
@@ -1002,6 +999,7 @@ class Checker
       this.symbols.funcs.set(name, {
         paramTypes: funcNode.args.map(a => a.type),
         returnType: funcNode.ret_type,
+        signature:  funcSig(funcNode.args.map(a => a.type), funcNode.ret_type),
       });
     }
     for (const [name, globalNode] of this.manifest.globals)
@@ -1129,14 +1127,18 @@ class Checker
 
       case NodeType.BECOME:
       {
-        this.checkNode(node.target, scope); // reuses FUNC_CALL/METHOD_CALL checks, stamps node.target.datatype
+        let targetCall = node.target;
+        while (targetCall && targetCall.type === NodeType.GROUP)
+        {
+          targetCall = targetCall.value;
+        }
+        this.checkNode(targetCall, scope);
+        const callee = this.symbols.funcs.get(targetCall.name);
+        const calleeName = targetCall.name;
+        const calleeSig = callee?.signature;
+        const outerSig  = this.symbols.funcs.get(this.currFunc?.name)?.signature;
 
-        // Deliberate restriction (not an LLVM/musttail requirement): a
-        // 'become' targeting a method call may only call a method on 'self' —
-        // never on some other object instance. A method-call target whose
-        // receiver isn't literally the identifier 'self' is rejected here.
-        // Plain function calls (non-method 'become' targets) are unaffected.
-        if (node.target.type === NodeType.METHOD_CALL)
+        if (targetCall.type === NodeType.METHOD_CALL)
         {
           const receiver = node.target.object;
           const isSelf = receiver.type === NodeType.GET && receiver.name === 'self';
@@ -1148,17 +1150,22 @@ class Checker
             );
           }
         }
-
-        if (this.currFunc?.ret_type && node.target.datatype &&
-            node.target.datatype !== this.currFunc.ret_type)
-        {
-          this.error(node,
-            `'become' target returns ${node.target.datatype}, ` +
-            `but the enclosing function returns ${this.currFunc.ret_type} — musttail requires matching return types`
-          );
-        }
-        return;
-      }
+  if (calleeSig && outerSig)
+  {
+    console.log(`\x1b[36m${calleeSig}, ${outerSig}\x1b[0m`);
+    if (calleeSig !== outerSig)
+    {
+      this.error(node, 
+        `Tail-call type mismatch: Cannot 'become' function '${calleeName}' returning ${calleeSig.returnType} ` +
+        `inside function '${this.currFunc.name}' returning ${this.currFunc.ret_type}`
+      );
+    }
+  }
+  
+  // Stamping the datatype ensures the Emitter knows the exact layout size
+  node.datatype = targetCall.datatype;
+  return;
+}
 
       case NodeType.BLOCK:
         this.checkBlock(node, scope);
