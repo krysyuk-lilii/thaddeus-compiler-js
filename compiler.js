@@ -1081,7 +1081,7 @@ class Checker
 
         if (this.symbols.globals.has(node.name))
         {
-          this.error.push(node,
+          this.error(node,
             `local '${node.name}' has the same name as a global — ` +
             `this is almost always a mistake (e.g. a 'let ${node.name}' meant to appear ` +
             `earlier in this function). Rename one of them.`
@@ -1230,7 +1230,7 @@ class Checker
         const sig = this.symbols.funcs.get(node.name);
         if (!sig)
         {
-          this.error(`call to undefined function '${node.name}'`);
+          this.error(node, `call to undefined function '${node.name}'`);
           for (const arg of node.args) this.checkNode(arg, scope);
           node.datatype = null;
           return;
@@ -1245,7 +1245,7 @@ class Checker
         });
         if (node.args.length !== sig.paramTypes.length)
         {
-          this.error(`'${node.name}' expects ${sig.paramTypes.length} argument(s), got ${node.args.length}`);
+          this.error(node, `'${node.name}' expects ${sig.paramTypes.length} argument(s), got ${node.args.length}`);
         }
         node.datatype = sig.returnType;
         return;
@@ -1294,7 +1294,7 @@ class Checker
         this.checkNode(node.object, scope);
         this.checkNode(node.index, scope);
         this.checkNode(node.value, scope);
-        const typeEntry = symbols.registry?.types.get(node.object.datatype);
+        const typeEntry = this.symbols.registry?.types.get(node.object.datatype);
         if (!typeEntry || !typeEntry.isArray)
         {
           this.error(node, `cannot index into non-array type '${node.object.datatype}'`);
@@ -1930,7 +1930,7 @@ async function compileString()
     });
 
     console.log('Linking...');
-    await execAsync('wasm-ld --no-entry --export-all --allow-undefined add.o -o prog.wasm');
+    await execAsync('wasm-ld --no-entry --export-all --allow-undefined prog.o -o prog.wasm');
     console.log('Success! program has been generated.');
 
     const wasmBuffer = await fs.readFile('./prog.wasm');
