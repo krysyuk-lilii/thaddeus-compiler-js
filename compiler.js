@@ -16,6 +16,8 @@ fun isEven(x : i32) : bool
 {
   return (x & 1) == 0
 }
+fun foo() : void
+{}
 fun countdown(x: i32) : void
 {
   if x < 0 {
@@ -23,6 +25,7 @@ fun countdown(x: i32) : void
   }
   print("counting: #{x}")
   become countdown(x - 1)
+  ; become foo() ; should be a compile error (tail call to unmatched signature.)
 }
 fun classify(x: i32, y: i32) : i32
 {
@@ -1150,22 +1153,22 @@ class Checker
             );
           }
         }
-  if (calleeSig && outerSig)
-  {
-    console.log(`\x1b[36m${calleeSig}, ${outerSig}\x1b[0m`);
-    if (calleeSig !== outerSig)
-    {
-      this.error(node, 
-        `Tail-call type mismatch: Cannot 'become' function '${calleeName}' returning ${calleeSig.returnType} ` +
-        `inside function '${this.currFunc.name}' returning ${this.currFunc.ret_type}`
-      );
-    }
-  }
-  
-  // Stamping the datatype ensures the Emitter knows the exact layout size
-  node.datatype = targetCall.datatype;
-  return;
-}
+        if (calleeSig && outerSig)
+        {
+          console.log(`\x1b[36m${calleeSig}, ${outerSig}\x1b[0m`);
+          if (calleeSig !== outerSig)
+          {
+            this.error(node, 
+              `'become' requires an identical signature: '${calleeName}' is ${calleeSig}, ` +
+              `but '${this.currFunc.name}' is ${outerSig}`
+            );
+          }
+        }
+        
+        // Stamping the datatype ensures the Emitter knows the exact layout size
+        node.datatype = targetCall.datatype;
+        return;
+      }
 
       case NodeType.BLOCK:
         this.checkBlock(node, scope);
