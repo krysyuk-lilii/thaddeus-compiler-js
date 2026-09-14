@@ -152,6 +152,7 @@ export class Emitter
     {
       elems.push(`${ entry.elemLlvm } zeroinitializer`);
     }
+    return `{ i32 ${ entry.length }, [${ entry. length } x ${extry.elemLlvm }] [${ elems.join(', ') }] }`;
   }
 
   emitExternDecl(node)
@@ -162,6 +163,15 @@ export class Emitter
     this.usedNativeDeclares.add(node.name);
     return `declare ${retType} @${node.name}(${argTypes}) #${attrIndex}\n` +
            `attributes #${attrIndex} = { "wasm-import-module"="env" "wasm-import-name"="${node.name}" }`;
+  }
+  
+  emitArrayAddr(node)
+  {
+    let target = node;
+    while (target.type === NodeType.GROUP)
+    {
+      target = target.value;
+    }
   }
 
   emitFunc(node)
