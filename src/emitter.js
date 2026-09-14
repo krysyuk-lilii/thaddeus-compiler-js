@@ -132,6 +132,27 @@ export class Emitter
         throw new Error(`Global initializers must be constant literals (got ${NodeType[node.type]})`);
     }
   }
+  arrLitLLVMVal(node, declaredType)
+  {
+    const entry = this.parser.registry.type.get(declaredType);
+    if (!entry?.isArray)
+    {
+      throw new Error(`unkown array type: ${declaredType}`);
+    }
+    if (node.elements.length === 0)
+    {
+      return `zeroinitializer`;
+    }
+    const LLVMelems = node.elements.map(x =>
+    {
+      const { val, type } = this.literalLlvmValue(x);
+      return `${ type } ${ val}`;
+    });
+    while (elems.length < entry.length)
+    {
+      elems.push(`${ entry.elemLlvm } zeroinitializer`);
+    }
+  }
 
   emitExternDecl(node)
   {

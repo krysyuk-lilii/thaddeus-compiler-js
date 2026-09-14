@@ -11,6 +11,7 @@ const sourceCode = `
 extern fun print(s: str) : void
 extern fun int_to_str(v: i32) : str
 extern fun str_concat(a: str, b: str) : str
+extern fun len(x: str[]) : i32
 
 let base := 10
 let arr : str[10] = {}
@@ -141,6 +142,11 @@ async function compileString()
           out.set(b, a.length);
           return ptr;
         },
+        len(ptr) {
+          const view = new DataView(memoryRef.buffer, ptr, 4);
+          const len  = view.getInt32(0, true);
+          return len;
+        }
       },
     };
     const wasmModule = await WebAssembly.instantiate(wasmBuffer, imports);

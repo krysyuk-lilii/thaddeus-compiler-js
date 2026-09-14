@@ -109,6 +109,11 @@ export class Parser
     const base = this.eat(TokenType.ID, "expected type").value;
     if (this.taste(TokenType.L_BRACK))
     {
+      if (this.taste(TokenType.R_BRACK))
+      {
+        this.registry.array(base, -1);
+        return `${base}[]`;
+      }
       const sizeTok = this.eat(TokenType.INT, "expected array size");
       this.eat(TokenType.R_BRACK, "expected ']'");
       const length = parseInt(sizeTok.value, 10);
