@@ -124,9 +124,9 @@ export class Emitter
   {
     switch (node.type)
     {
-      case NodeType.INT:  return { val: String(node.value), type: 'i32' };
-      case NodeType.REAL: return { val: String(node.value), type: 'float' };
-      case NodeType.TRUE: return { val: '1', type: 'i1' };
+      case NodeType.INT:   return { val: String(node.value), type: 'i32' };
+      case NodeType.REAL:  return { val: String(node.value), type: 'float' };
+      case NodeType.TRUE:  return { val: '1', type: 'i1' };
       case NodeType.FALSE: return { val: '0', type: 'i1' };
       default:
         throw new Error(`Global initializers must be constant literals (got ${NodeType[node.type]})`);
@@ -134,7 +134,7 @@ export class Emitter
   }
   arrLitLLVMVal(node, declaredType)
   {
-    const entry = this.parser.registry.type.get(declaredType);
+    const entry = this.parser.registry.types.get(declaredType);
     if (!entry?.isArray)
     {
       throw new Error(`unkown array type: ${declaredType}`);

@@ -31,8 +31,20 @@ export class TypeRegistry
   }
   array(elementTypeName, length)
   {
-    const key = `${elementTypeName}[${length}]`;
+    const key = `${elementTypeName}[${ length < 0 ? '' : length }]`;
     if (this.types.has(key)) return this.types.get(key);
+    if (length < 0)
+    {
+      // Unsized array param type (`T[]`): only ever appears decayed to a
+      // pointer at a call boundary — never a value type with its own size.
+      const def = {
+        isPrimitive: false, isArray: true,
+        unsized: true, elementType: elementTypeName,
+        llvmString: 'ptr', size: 8
+      };
+      this.types.set(key, def);
+      return def;
+    }
     const elemEntry = this.types.get(elementTypeName);
     const elemLlvm = elemEntry ? elemEntry.llvmString : 'i32';
     const elemSize = elemEntry ? elemEntry.size : 4;
@@ -94,6 +106,17 @@ export class Checker
       const inferred = globalNode.declaredType ?? literalDatatype(globalNode.value);
       this.symbols.globals.set(name, { type: inferred, mutable: !!globalNode.mutable });
     }
+  }
+  paramAccepts(paramType, argType)
+  {
+    if (paramType === argType) return true;
+    if (paramType?.endsWith('[]'))
+    {
+      const elem = paramType.slice(0, -2);
+      const argEntry = this.symbols.registry.types.get(argType);
+      return !!argEntry?.isArray && argEntry.elementType === elem;
+    }
+    return false;
   }
   check()
   {
@@ -322,7 +345,7 @@ export class Checker
         node.args.forEach((arg, i) =>
         {
           this.checkNode(arg, scope);
-          if (sig.paramTypes[i] && arg.datatype && arg.datatype !== sig.paramTypes[i])
+          if (sig.paramTypes[i] && arg.datatype && !this.paramAccepts(sig.paramTypes[i], arg.datatype))
           {
             this.error(node, `argument ${i} to '${node.name}': expected ${sig.paramTypes[i]}, got ${arg.datatype}`);
           }

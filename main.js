@@ -59,7 +59,7 @@ fun init() : i32
 {
   let x := len(arr)
   countdown(x)
-  printAndFeeArr(x)
+  printAndFreeArr(x)
   let r := classify(base, 20)
   var counter := 0
   counter = counter + 1

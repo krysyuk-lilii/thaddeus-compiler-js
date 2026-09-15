@@ -5,13 +5,13 @@ import { TypeRegistry }     from './checker.js';
 export const NodeType = Enum(
   'BINARY', 'UNARY', 'GROUP', 'STRING', 'NULL', 'REAL', 'INT', 'GET',
   'TRUE', 'FALSE', 'AND', 'OR', 'IF', 'NOT', 'GET_PROP', 'SET_PROP', 'INTERP', 'BECOME',
-  'STRUCT_LIT', 'METHOD_CALL', 'ARRAY_LIT', 'SUBSCRIPT', 'SET_SUBSCRIPT', 'NEW',
+  'STRUCT_LIT', 'METHOD_CALL', 'ARRAY_LIT', 'SUBSCRIPT', 'SET_SUBSCRIPT', 'NEW', 'FREE',
   'RETURN', 'DECLARE', 'ASSIGN', 'BLOCK', 'FUNC', 'FUNC_CALL', 'END'
 );
 
 const Node = (() =>
 {
-  const base = (type, line = 0, datatype = null) => ({ type, line });
+  const base = (type, line = 0, datatype = null) => ({ type, line, datatype });
   return {
     Constant: (type, token, datatype) => ({ ...base(type, token.line, datatype), value: token.value }),
     Nilary: base,
@@ -30,6 +30,9 @@ const Node = (() =>
     Assign: (name, value, line = 0) => ({
       ...base(NodeType.ASSIGN, line), name, value
     }),
+    Free: (target, line) => ({
+      ...base(NodeType.FREE, line)
+    })
   };
 })();
 
